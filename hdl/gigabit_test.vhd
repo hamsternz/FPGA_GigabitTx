@@ -1,20 +1,9 @@
 ----------------------------------------------------------------------------------
--- Company: 
--- Engineer: 
+-- Engineer: Mike Field <hamster@snap.net.nz> 
 -- 
--- Create Date: 01.05.2016 20:53:48
--- Design Name: 
 -- Module Name: gigabit_test - Behavioral
--- Project Name: 
--- Target Devices: 
--- Tool Versions: 
--- Description: 
 -- 
--- Dependencies: 
--- 
--- Revision:
--- Revision 0.01 - File Created
--- Additional Comments:
+-- Dependencies: Testing how Gigabit ethernet PHY transmits data. 
 -- 
 ----------------------------------------------------------------------------------
 library IEEE;
@@ -151,7 +140,7 @@ send_data_out: process(clk125MHz)
     end process;
 
    ----------------------------------------------------
-   -- DDR otuput registers 
+   -- DDR output registers 
    ----------------------------------------------------
 tx_d0  : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
               port map (Q  => eth_txd(0), C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => dout(0), D2 => dout(4));

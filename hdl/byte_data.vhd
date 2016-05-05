@@ -56,11 +56,11 @@ architecture Behavioral of byte_data is
     signal udp_length        : std_logic_vector(15 downto 0) := std_logic_vector(to_unsigned(udp_total_bytes, 16)); 
     signal udp_checksum      : std_logic_vector(15 downto 0) := x"0000";     -- Checksum is optional, and if presentincludes the data
 begin
-   ---------------------------------------------
-   -- Calutate the TCP checksum using logic
-   -- This should all colapse down to a constant
-   -- at build-time (example #s found on the web)
    ----------------------------------------------
+   -- Calculate the TCP checksum using logic
+   -- This should all collapse down to a constant
+   -- at build-time (example was found on the web)
+   -----------------------------------------------
    --- Step 1) 4500 + 0030 + 4422 + 4000 + 8006 + 0000 + (0410 + 8A0C + FFFF + FFFF) = 0002BBCF (32-bit sum)
    ip_checksum1 <= to_unsigned(0,32) 
                  + unsigned(ip_version & ip_header_len & ip_dscp_ecn)
