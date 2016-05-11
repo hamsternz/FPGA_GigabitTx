@@ -15,20 +15,20 @@ use UNISIM.vcomponents.all;
 
 entity gigabit_test is
     Port ( clk100MHz : in    std_logic; -- system clock
-           switches  : in    std_logic_vector(3 downto 0);
+           switches  : in    std_logic_vector(5 downto 0);
            
-           -- Control signals
+           -- Ethernet Control signals
            eth_int_b : in    std_logic; -- interrupt
            eth_pme_b : in    std_logic; -- power management event
            eth_rst_b : out   std_logic := '0'; -- reset
-           -- Management interface
+           -- Ethernet Management interface
            eth_mdc   : out   std_logic := '0'; 
            eth_mdio  : inout std_logic := '0';
-           -- Receive interface
+           -- Ethernet Receive interface
            eth_rxck  : in    std_logic; 
            eth_rxctl : in    std_logic;
            eth_rxd   : in    std_logic_vector(3 downto 0);
-           -- Transmit interface
+           -- Ethernet Transmit interface
            eth_txck  : out   std_logic := '0';
            eth_txctl : out   std_logic := '0';
            eth_txd   : out   std_logic_vector(3 downto 0) := (others => '0')
@@ -36,56 +36,84 @@ entity gigabit_test is
 end gigabit_test;
 
 architecture Behavioral of gigabit_test is
-    signal max_count     : unsigned(26 downto 0)         := (others => '0');
-    signal count         : unsigned(26 downto 0)         := (others => '0');
+    signal max_count          : unsigned(26 downto 0)         := (others => '0');
+    signal count              : unsigned(26 downto 0)         := (others => '0');
+    signal speed              : STD_LOGIC_VECTOR (1 downto 0) := "01";
+    signal adv_data           : STD_LOGIC := '0';
+    signal CLK100MHz_buffered : STD_LOGIC := '0';
+
+    signal de_count      : unsigned(6 downto 0)          := (others => '0');
     signal start_sending : std_logic                     := '0';
     signal reset_counter : unsigned(24 downto 0)         := (others => '0');
     signal debug         : STD_LOGIC_VECTOR (5 downto 0) := (others => '0');
     signal phy_ready     : std_logic                     := '0';
-    signal tx_ready_meta : std_logic                     := '0';
-    signal tx_ready      : std_logic                     := '0';
-    signal ok_to_send    : std_logic                     := '1';
     signal user_data     : std_logic                     := '0';
 
     component byte_data is
-        Port ( clk        : in STD_LOGIC;
-               start      : in  STD_LOGIC;
-               busy       : out STD_LOGIC;
-               data       : out STD_LOGIC_VECTOR (7 downto 0);
-               user_data  : out STD_LOGIC;
-               data_valid : out STD_LOGIC);
+        Port ( clk             : in STD_LOGIC;
+               start           : in  STD_LOGIC;
+               busy            : out STD_LOGIC;
+               
+               advance         : in  STD_LOGIC;               
+               
+               data            : out STD_LOGIC_VECTOR (7 downto 0);
+               data_user       : out STD_LOGIC;
+               data_enable     : out STD_LOGIC;               
+               data_valid      : out STD_LOGIC);
     end component;
 
-    signal raw_byte        : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
-    signal raw_byte_valid  : std_logic                     := '0';
+    signal raw_data        : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
+    signal raw_data_user   : std_logic                     := '0';
+    signal raw_data_valid  : std_logic                     := '0';
+    signal raw_data_enable : std_logic                     := '0';
 
     component add_crc32 is
         Port ( clk             : in  STD_LOGIC;
+        
                data_in         : in  STD_LOGIC_VECTOR (7 downto 0);
+               data_valid_in   : in  STD_LOGIC;
                data_enable_in  : in  STD_LOGIC;
+               
                data_out        : out STD_LOGIC_VECTOR (7 downto 0);
+               data_valid_out  : out STD_LOGIC;
                data_enable_out : out STD_LOGIC);
     end component;
 
     signal with_crc        : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
     signal with_crc_valid  : std_logic                     := '0';
+    signal with_crc_enable : std_logic                     := '0';
     
     component add_preamble is
         Port ( clk             : in  STD_LOGIC;
+
                data_in         : in  STD_LOGIC_VECTOR (7 downto 0);
+               data_valid_in   : in  STD_LOGIC;
                data_enable_in  : in  STD_LOGIC;
+               
                data_out        : out STD_LOGIC_VECTOR (7 downto 0);
+               data_valid_out  : out STD_LOGIC;
                data_enable_out : out STD_LOGIC);
     end component;
 
     signal fully_framed        : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
     signal fully_framed_valid  : std_logic                     := '0';
+    signal fully_framed_enable : std_logic                     := '0';
+    signal fully_framed_err    : std_logic                     := '0';
 
-    signal dout                : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
-    signal doutctl             : STD_LOGIC := '0';
-    ATTRIBUTE IOB : STRING ;
-    ATTRIBUTE IOB OF dout    : signal IS "TRUE";
-    ATTRIBUTE IOB OF doutctl : signal IS "TRUE";
+    component rgmii_tx is
+    Port ( clk         : in STD_LOGIC;
+           clk90       : in STD_LOGIC;
+           phy_ready   : in STD_LOGIC;
+
+           data        : in  STD_LOGIC_VECTOR (7 downto 0);
+           data_valid  : in  STD_LOGIC;
+           data_enable : in  STD_LOGIC;
+           data_error  : in  STD_LOGIC;
+
+           eth_txck    : out STD_LOGIC;
+           eth_txctl   : out STD_LOGIC;
+           eth_txd     : out STD_LOGIC_VECTOR (3 downto 0));
+    end component;
 
     --------------------------------
     -- Clocking signals 
@@ -100,71 +128,87 @@ begin
    -- Strapping signals
    ----------------------------------------------------
    -- No pullups/pulldowns added
+
+   ---------------------------------------------------
+   -- Generate the timing signals for tri-mode
+   -- operation (10/100/1000). The speed is set using
+   -- switches 4 & 5
+   ---------------------------------------------------
+   speed <= switches(5 downto 4);   
+process(clk125Mhz)
+    begin
+        if rising_edge(clk125Mhz) then
+            if de_count = 0 then
+                adv_data <= '1';
+            else
+                adv_data <= '0';
+            end if;
+
+            case speed is 
+                when "00" =>
+                    de_count <= (others => '1');
+                when "01" =>
+                    if de_count > 98 then
+                        de_count <= (others => '0');
+                    else
+                        de_count <= de_count + 1;
+                    end if;
+                when "10" =>
+                    if de_count > 8 then
+                        de_count <= (others => '0');
+                    else
+                        de_count <= de_count + 1;
+                    end if;
+                when others =>
+                    de_count <= (others => '0');
+            end case;
+        end if;
+    end process;
  
    ----------------------------------------------------
    -- Data for the packet packet 
    ----------------------------------------------------
 data: byte_data port map ( 
       clk        => clk125MHz,
-      start      => start_sending,
-      busy       => open,
-      data       => raw_byte,
-      user_data  => user_data,
-      Data_valid => raw_byte_valid);
+      start       => start_sending,
+      advance     => adv_data,
+      busy        => open,
+      data        => raw_data,
+      data_user   => raw_data_user,
+      data_enable => raw_data_enable,
+      Data_valid  => raw_data_valid);
 
 i_add_crc32: add_crc32 port map (
       clk             => clk125MHz,
-      data_in         => raw_byte,
-      data_enable_in  => raw_byte_valid,
+      data_in         => raw_data,
+      data_valid_in   => raw_data_valid,
+      data_enable_in  => raw_data_enable,
       data_out        => with_crc,
-      data_enable_out => with_crc_valid);
+      data_valid_out  => with_crc_valid,
+      data_enable_out => with_crc_enable);
 
 i_add_preamble: add_preamble port map (
       clk             => clk125MHz,
       data_in         => with_crc,
-      data_enable_in  => with_crc_valid,
+      data_valid_in   => with_crc_valid,
+      data_enable_in  => with_crc_enable,
       data_out        => fully_framed,
-      data_enable_out => fully_framed_valid);
-      
-   ----------------------------------------------------
-   -- Send the data out to the ethernet PHY
-   -- But only when it is OK to send after the
-   -- PHY has been out of reset for long enough 
-   ----------------------------------------------------
-send_data_out: process(clk125MHz)
-    begin
-       if falling_edge(clk125MHz) then
-           dout    <= fully_framed;
-           doutctl <= fully_framed_valid and ok_to_send;
-       end if;
-    end process;
+      data_valid_out  => fully_framed_valid,
+      data_enable_out => fully_framed_enable);
 
-   ----------------------------------------------------
-   -- DDR output registers 
-   ----------------------------------------------------
-tx_d0  : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txd(0), C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => dout(0), D2 => dout(4));
-tx_d1  : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txd(1), C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => dout(1), D2 => dout(5));
-tx_d2  : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txd(2), C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => dout(2), D2 => dout(6));
-tx_d3  : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txd(3), C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => dout(3), D2 => dout(7));
-tx_ctl : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txctl,   C  => clk125MHz, CE => '1', R  => '0', S  => '0', D1 => doutctl, D2 => doutctl);
-tx_c   : ODDR generic map( DDR_CLK_EDGE => "SAME_EDGE", INIT         => '0', SRTYPE       => "SYNC")
-              port map (Q  => eth_txck,  C  => clk125MHz90, CE => '1', R  => '0', S  => '0', D1 => '1', D2 => '0');
-    
-monitor_reset_state: process(clk125MHz)
-    begin
-       if rising_edge(clk125MHz) then
-          tx_ready      <= tx_ready_meta;
-          tx_ready_meta <= phy_ready;
-          if tx_ready = '1' and fully_framed_valid = '0' then
-             ok_to_send    <= '1';
-          end if;
-       end if;
-    end process;
+i_rgmii_tx:    rgmii_tx port map (
+      clk         => clk125MHz,
+      clk90       => clk125MHz90,
+      phy_ready   => phy_ready,
+
+      data        => fully_framed,
+      data_valid  => fully_framed_valid,
+      data_enable => fully_framed_enable,
+      data_error  => '0',
+
+      eth_txck    => eth_txck, 
+      eth_txctl   => eth_txctl,
+      eth_txd     => eth_txd);
 
     ----------------------------------------
     -- Control reseting the PHY
@@ -175,11 +219,16 @@ control_reset: process(clk125MHz)
           if reset_counter(reset_counter'high) = '0' then
               reset_counter <= reset_counter + 1;
           end if; 
-           eth_rst_b <= reset_counter(reset_counter'high) or reset_counter(reset_counter'high-1);
+          eth_rst_b <= reset_counter(reset_counter'high) or reset_counter(reset_counter'high-1);
           phy_ready  <= reset_counter(reset_counter'high);
        end if;
     end process;
     
+bufg_100: BUFG 
+    port map (
+        i => CLK100MHz,
+        o => CLK100MHz_buffered
+    );
    -------------------------------------------------------
    -- Generate a 25MHz and 50Mhz clocks from the 100MHz 
    -- system clock 
@@ -208,7 +257,7 @@ clocking : PLLE2_BASE
       STARTUP_WAIT       => "FALSE"
    )
    port map (
-      CLKIN1   => CLK100MHz,
+      CLKIN1   => CLK100MHz_buffered,
       CLKOUT0 => CLK125MHz,   CLKOUT1 => CLK50Mhz,  CLKOUT2 => CLK25MHz,  
       CLKOUT3 => CLK125MHz90, CLKOUT4 => open,      CLKOUT5 => open,
       LOCKED   => open,

@@ -7,6 +7,9 @@ set_property -dict { PACKAGE_PIN E22  IOSTANDARD LVCMOS25 } [get_ports { switche
 set_property -dict { PACKAGE_PIN F21  IOSTANDARD LVCMOS25 } [get_ports { switches[1] }]; #IO_25_16 Sch=sw[1]
 set_property -dict { PACKAGE_PIN G21  IOSTANDARD LVCMOS25 } [get_ports { switches[2] }]; #IO_L24P_T3_16 Sch=sw[2]
 set_property -dict { PACKAGE_PIN G22  IOSTANDARD LVCMOS25 } [get_ports { switches[3] }]; #IO_L24N_T3_16 Sch=sw[3]
+set_property -dict { PACKAGE_PIN H17  IOSTANDARD LVCMOS25 } [get_ports { switches[4] }]; #IO_L6P_T0_15 Sch=sw[4]
+set_property -dict { PACKAGE_PIN J16  IOSTANDARD LVCMOS25 } [get_ports { switches[5] }]; #IO_0_15 Sch=sw[5]
+
 
 #Ethernet
 set_property -dict { PACKAGE_PIN Y14   IOSTANDARD LVCMOS25 } [get_ports { eth_int_b }]; #IO_L6N_T0_VREF_13 Sch=eth_int_b
@@ -26,4 +29,3 @@ set_property -dict { PACKAGE_PIN Y12   IOSTANDARD LVCMOS25 } [get_ports { eth_tx
 set_property -dict { PACKAGE_PIN W12   IOSTANDARD LVCMOS25 } [get_ports { eth_txd[1] }]; #IO_L12N_T1_MRCC_13 Sch=eth_txd[1]
 set_property -dict { PACKAGE_PIN W11   IOSTANDARD LVCMOS25 } [get_ports { eth_txd[2] }]; #IO_L12P_T1_MRCC_13 Sch=eth_txd[2]
 set_property -dict { PACKAGE_PIN Y11   IOSTANDARD LVCMOS25 } [get_ports { eth_txd[3] }]; #IO_L11P_T1_SRCC_13 Sch=eth_txd[3]
-

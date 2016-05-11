@@ -11,12 +11,15 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
 entity byte_data is
-    Port ( clk        : in  STD_LOGIC;
-           start      : in  STD_LOGIC;
-           busy       : out STD_LOGIC;
-           data       : out STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
-           user_data  : out STD_LOGIC                     := '0';
-           data_valid : out STD_LOGIC                     := '0');
+    Port ( clk         : in  STD_LOGIC;
+           start       : in  STD_LOGIC;
+           advance     : in  STD_LOGIC;
+           busy        : out STD_LOGIC := '0';
+           
+           data        : out STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
+           data_user   : out STD_LOGIC                     := '0';               
+           data_valid  : out STD_LOGIC                     := '0';
+           data_enable : out STD_LOGIC                     := '0');
 end byte_data;
 
 architecture Behavioral of byte_data is
@@ -25,7 +28,7 @@ architecture Behavioral of byte_data is
     constant data_bytes        : integer := 16+1024;
     constant ip_total_bytes    : integer := ip_header_bytes + udp_header_bytes + data_bytes;
     constant udp_total_bytes   : integer := udp_header_bytes + data_bytes;
-
+    signal start_internal      : std_logic := '0';
     signal counter : unsigned(11 downto 0) := (others => '0');
     
     
@@ -82,8 +85,21 @@ generate_nibbles: process (clk)
         if rising_edge(clk) then
             -- Update the counter of where we are 
             -- in the packet
-            if counter /= 0 or start = '1' then
-               counter <= counter + 1;
+            if start = '1' then           
+                start_internal <= '1';
+            end if;
+
+            data_enable <= '0';
+            if advance = '1' then
+                data_enable <= '1';
+                if counter = 0 then
+                    if start_internal = '1' or start = '1' then
+                        counter         <= counter + 1;
+                        start_internal  <= start;
+                    end if;
+                else
+                    counter <= counter + 1;
+                end if;            
             end if;
             
             -- Note, this uses the current value of counter, not the one assigned above!
@@ -165,7 +181,7 @@ generate_nibbles: process (clk)
               -- Finally! 16 bytes of user data (defaults 
               -- to "0000" due to assignement above CASE).
               ---------------------------------------------
-              when x"02B" => user_data <= '1';
+              when x"02B" => data_user <= '1';
               when x"02C" => NULL; 
               when x"02D" => NULL; 
               when x"02E" => NULL; 
@@ -185,7 +201,7 @@ generate_nibbles: process (clk)
               -- Ethernet Frame Check Sequence (CRC) will 
               -- be added here, overwriting these nibbles
               --------------------------------------------
-              when x"43B" => data_valid <= '0'; user_data <= '0';
+              when x"43B" => data_valid <= '0'; data_user <= '0';
               when x"43C" => NULL;
               when x"43D" => NULL;
               when x"43E" => NULL;
