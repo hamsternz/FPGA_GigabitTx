@@ -270,7 +270,7 @@ clocking : PLLE2_BASE
  when_to_send: process(clk125MHz) 
     begin  
         if rising_edge(clk125MHz) then
-            case switches is
+            case switches(3 downto 0) is
                 when "0000" => max_count <= to_unsigned(124_999_999,27);  -- 1 packet per second
                 when "0001" => max_count <= to_unsigned( 62_499_999,27);  -- 2 packet per second
                 when "0010" => max_count <= to_unsigned( 12_499_999,27);  -- 10 packets per second 

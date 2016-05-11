@@ -45,7 +45,7 @@ architecture Behavioral of tb_gigabit_test is
 
     component gigabit_test is
     Port ( clk100MHz : in    std_logic; -- system clock
-           switches  : in    std_logic_vector(3 downto 0);
+           switches  : in    std_logic_vector(5 downto 0);
            -- Control signals
            eth_int_b : in    std_logic; -- interrupt
            eth_pme_b : in    std_logic; -- power management event
@@ -68,7 +68,7 @@ begin
 
 uut: gigabit_test Port map (
     clk100MHz => clk100MHz,
-           switches => "1111",
+           switches => "111110",
            -- Control signals
            eth_int_b => eth_int_b,
            eth_pme_b => eth_pme_b,
