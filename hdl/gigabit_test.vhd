@@ -15,7 +15,8 @@ use UNISIM.vcomponents.all;
 
 entity gigabit_test is
     Port ( clk100MHz : in    std_logic; -- system clock
-           switches  : in    std_logic_vector(5 downto 0);
+           switches  : in    std_logic_vector(3 downto 0);
+           leds      : out   std_logic_vector(3 downto 0);
            
            -- Ethernet Control signals
            eth_int_b : in    std_logic; -- interrupt
@@ -38,7 +39,7 @@ end gigabit_test;
 architecture Behavioral of gigabit_test is
     signal max_count          : unsigned(26 downto 0)         := (others => '0');
     signal count              : unsigned(26 downto 0)         := (others => '0');
-    signal speed              : STD_LOGIC_VECTOR (1 downto 0) := "01";
+    signal speed              : STD_LOGIC_VECTOR (1 downto 0) := "11";
     signal adv_data           : STD_LOGIC := '0';
     signal CLK100MHz_buffered : STD_LOGIC := '0';
 
@@ -114,6 +115,29 @@ architecture Behavioral of gigabit_test is
            eth_txctl   : out STD_LOGIC;
            eth_txd     : out STD_LOGIC_VECTOR (3 downto 0));
     end component;
+    
+    signal rx_fully_framed        : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
+    signal rx_fully_framed_valid  : std_logic                     := '0';
+    signal rx_fully_framed_enable : std_logic                     := '0';
+    signal rx_fully_framed_err    : std_logic                     := '0';
+
+    component rgmii_rx is
+    Port ( rx_clk           : in  STD_LOGIC;
+           rx_ctl           : in  STD_LOGIC;
+           rx_data          : in  STD_LOGIC_VECTOR (3 downto 0);
+           link_10mb        : out STD_LOGIC;
+           link_100mb       : out STD_LOGIC;
+           link_1000mb      : out STD_LOGIC;
+           link_full_duplex : out STD_LOGIC;
+           data             : out STD_LOGIC_VECTOR (7 downto 0);
+           data_valid       : out STD_LOGIC;
+           data_enable      : out STD_LOGIC;
+           data_error       : out STD_LOGIC);
+    end component;
+    signal link_10mb        : std_logic;
+    signal link_100mb       : std_logic;
+    signal link_1000mb      : std_logic;
+    signal link_full_duplex : std_logic;
 
     --------------------------------
     -- Clocking signals 
@@ -134,7 +158,6 @@ begin
    -- operation (10/100/1000). The speed is set using
    -- switches 4 & 5
    ---------------------------------------------------
-   speed <= switches(5 downto 4);   
 process(clk125Mhz)
     begin
         if rising_edge(clk125Mhz) then
@@ -199,7 +222,7 @@ i_add_preamble: add_preamble port map (
 i_rgmii_tx:    rgmii_tx port map (
       clk         => clk125MHz,
       clk90       => clk125MHz90,
-      phy_ready   => phy_ready,
+      phy_ready   => '1', --phy_ready,
 
       data        => fully_framed,
       data_valid  => fully_framed_valid,
@@ -223,7 +246,40 @@ control_reset: process(clk125MHz)
           phy_ready  <= reset_counter(reset_counter'high);
        end if;
     end process;
-    
+----------------------------------------------------------------------
+-- The receive path
+----------------------------------------------------------------------
+i_rgmii_rx: rgmii_rx port map (
+       rx_clk           => eth_rxck,
+       rx_ctl           => eth_rxctl,
+       rx_data          => eth_rxd,
+       link_10mb        => link_10mb,
+       link_100mb       => link_100mb,
+       link_1000mb      => link_1000mb,
+       link_full_duplex => link_full_duplex,
+       data             => rx_fully_framed,
+       data_valid       => rx_fully_framed_valid,
+       data_enable      => rx_fully_framed_enable,
+       data_error       => rx_fully_framed_err);
+       
+       leds(0) <= link_10mb;
+       leds(1) <= link_100mb;
+       leds(2) <= link_1000mb;
+       leds(3) <= link_full_duplex;
+       
+choose_tx_speed: process(clk125MHz)
+    begin
+        if rising_edge(clk125MHz) then
+            if link_1000mb = '1' then
+                speed <= "11";
+            elsif link_100mb = '1' then
+                speed <= "10"; 
+            elsif link_10mb = '1' then
+                speed <= "01"; 
+            end if;
+        end if;
+    end process;    
+
 bufg_100: BUFG 
     port map (
         i => CLK100MHz,
@@ -249,8 +305,8 @@ clocking : PLLE2_BASE
       CLKOUT3_DUTY_CYCLE => 0.5, CLKOUT4_DUTY_CYCLE => 0.5, CLKOUT5_DUTY_CYCLE => 0.5,
 
       -- CLKOUT0_PHASE - CLKOUT5_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
-      CLKOUT0_PHASE      =>  0.0, CLKOUT1_PHASE      => 0.0, CLKOUT2_PHASE      => 0.0,
-      CLKOUT3_PHASE      => 90.0, CLKOUT4_PHASE      => 0.0, CLKOUT5_PHASE      => 0.0,
+      CLKOUT0_PHASE      =>    0.0, CLKOUT1_PHASE      => 0.0, CLKOUT2_PHASE      => 0.0,
+      CLKOUT3_PHASE      => -270.0, CLKOUT4_PHASE      => 0.0, CLKOUT5_PHASE      => 0.0,
 
       DIVCLK_DIVIDE      => 1,
       REF_JITTER1        => 0.0,
